@@ -353,7 +353,7 @@ export function ExplorerTab({ active, initialFolderId, onFolderChange, onOpenCom
       default:
         explorerToast.info(`Action : ${actionId}`, 'Simulation');
     }
-  }, [ctxMenu, explorer, handleCopy, handleCopyName, handleCopyPath, handleCut, handleDelete, handleOpen, handleOpenTerminal, handlePaste, handleProperties, handleNewFile, handleCompress, ops, play, pinFolder, unpinFolder]);
+  }, [ctxMenu, explorer, sourceApi.sources, handleCopy, handleCopyName, handleCopyPath, handleCut, handleDelete, handleOpen, handleOpenSource, handleOpenTerminal, handlePaste, handleProperties, handleNewFile, handleCompress, ops, play, pinFolder, unpinFolder]);
 
   const virtualId = explorer.nav.location.type === 'virtual' ? explorer.nav.location.id : null;
   const isMobileRoot = explorer.nav.currentFolderId === 'mobile-root';
