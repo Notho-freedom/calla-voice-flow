@@ -9,9 +9,13 @@ import { cn } from '@/lib/utils';
 import { openContextMenu } from '@/lib/contextMenuBus';
 import { useExplorerSources } from '@/hooks/useExplorerSources';
 import { EXPLORER_DND_MIME } from '@/hooks/useDragDrop';
-import { FtpConnectionDialog } from './FtpConnectionDialog';
+import { NewConnectionDialog } from './NewConnectionDialog';
 import { GitHubAuthDialog } from './GitHubAuthDialog';
 import { saveGithubToken } from './GitHubAuthCard';
+import { explorerToast } from './ExplorerToasts';
+import { fileSystem } from '@/data/mockFileSystem';
+import { api } from '@/lib/apiClient';
+import type { NetworkKind } from './contextMenuConfig';
 import type { ExplorerSource } from '@/types/explorerSources';
 
 interface Props {
@@ -63,6 +67,8 @@ const netStatusDot = (status: string) => cn(
 );
 
 const STORE_KEY = 'explorer.sidebar.collapsed';
+const PINNED_KEY = 'explorer.quickAccess.pinned.v1';
+const LOCAL_SOURCES_KEY = 'explorer.sources.local.v1';
 function readCollapsed(): Record<string, boolean> {
   try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch { return {}; }
 }
@@ -86,6 +92,19 @@ function sourceIcon(source: ExplorerSource) {
   if (source.type === 'cloud') return sidebarIcons.cloud;
   if (source.type === 'network') return sidebarIcons.network;
   return sidebarIcons.folder;
+}
+
+function networkKind(source: ExplorerSource): NetworkKind {
+  const provider = (source as ExplorerSource & { provider?: string }).provider || source.type;
+  if (provider === 'gdrive') return 'gdrive';
+  if (provider === 'onedrive') return 'onedrive';
+  if (provider === 'ftp' || provider === 'sftp') return 'ftp';
+  if (provider === 'smb') return 'smb';
+  return 'cloud';
+}
+
+function readPinned(): string[] {
+  try { return JSON.parse(localStorage.getItem(PINNED_KEY) || '[]'); } catch { return []; }
 }
 
 function SidebarItem({ icon, label, active, onClick, indent = 0, right, onContextMenu, expandable, expanded, onToggleExpand, loading, isCircular, folderId, onDrop }: {
@@ -320,6 +339,7 @@ export function ExplorerSidebar({
   const [driveRoots, setDriveRoots] = useState<Record<string, DirEntry[]>>({});
   const [recentRepos, setRecentRepos] = useState<RecentRepo[]>([]);
   const [ghUser, setGhUser] = useState<GitHubUser | null>(null);
+  const [pinnedIds, setPinnedIds] = useState<string[]>(() => readPinned());
 
   const readJson = <T,>(key: string, fallback: T): T => {
     try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; } catch { return fallback; }
@@ -341,6 +361,16 @@ export function ExplorerSidebar({
       window.removeEventListener('storage', handler);
     };
   }, [loadRecentRepos]);
+
+  useEffect(() => {
+    const handler = () => setPinnedIds(readPinned());
+    window.addEventListener('explorer:pins-changed', handler);
+    window.addEventListener('storage', handler);
+    return () => {
+      window.removeEventListener('explorer:pins-changed', handler);
+      window.removeEventListener('storage', handler);
+    };
+  }, []);
 
   useEffect(() => {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(collapsed)); } catch { /* ignore unavailable storage */ }
@@ -397,6 +427,33 @@ export function ExplorerSidebar({
     onOpenSource?.(homeSource.id, path);
   };
 
+  const handleSourceAction = async (actionId: string, source: ExplorerSource) => {
+    if (actionId === 'open') { onOpenSource?.(source.id, '/'); return; }
+    if (actionId === 'open.tab') { onOpenSource?.(source.id, '/'); explorerToast.info('Source ouverte', source.name); return; }
+    if (actionId === 'refresh') { await list(source.id, '/', { force: true }); explorerToast.success('Source actualisée', source.name); return; }
+    if (actionId === 'copy.path') { await navigator.clipboard?.writeText(source.root || source.host || source.name); explorerToast.success('Chemin réseau copié', source.name); return; }
+    if (actionId === 'delete' || actionId === 'net.disconnect') {
+      try {
+        await api.del(`/api/sources/${encodeURIComponent(source.id)}`);
+        const local = JSON.parse(localStorage.getItem(LOCAL_SOURCES_KEY) || '[]').filter((entry: ExplorerSource) => entry.id !== source.id);
+        localStorage.setItem(LOCAL_SOURCES_KEY, JSON.stringify(local));
+      } catch { /* ignore */ }
+      window.dispatchEvent(new CustomEvent('explorer:sources-changed'));
+      explorerToast.info('Emplacement retiré', source.name);
+      return;
+    }
+    explorerToast.info(`Réseau · ${actionId}`, source.name);
+  };
+
+  const handleRepoAction = (actionId: string, repo: RecentRepo) => {
+    if (actionId === 'open') { onOpenRepo?.(repo); return; }
+    if (actionId === 'git.web') { window.open(repo.html_url, '_blank', 'noopener,noreferrer'); return; }
+    if (actionId === 'copy.url') { void navigator.clipboard?.writeText(repo.html_url); explorerToast.success('URL copiée', repo.full_name); return; }
+    if (actionId === 'git.history') { window.open(`${repo.html_url}/commits`, '_blank', 'noopener,noreferrer'); return; }
+    if (actionId === 'git.pr') { window.open(`${repo.html_url}/pulls`, '_blank', 'noopener,noreferrer'); return; }
+    explorerToast.git(`GitHub · ${actionId}`, repo.full_name);
+  };
+
   return (
     <div className="h-full flex flex-col bg-[hsl(var(--sidebar-background))] border-r border-[hsl(var(--sidebar-border))] overflow-y-auto w-full select-none">
       <Section k="quick" label={t('sidebar.quickAccess')} collapsed={!!collapsed.quick} onToggle={toggleSection}>
@@ -408,6 +465,31 @@ export function ExplorerSidebar({
             label={item.label}
             active={activeSourceId === homeSource.id && activeSourcePath.toLowerCase() === item.path.toLowerCase()}
             onClick={() => openHomePath(item.path)}
+            onContextMenu={(e) => openContextMenu(e, {
+              isBackground: false,
+              isQuickAccess: true,
+              file: fileSystem[item.id] || null,
+              hasClipboard: false,
+              selectedCount: 1,
+              targetId: item.id,
+            })}
+          />
+        ))}
+        {pinnedIds.filter((id) => fileSystem[id]).map((id) => (
+          <SidebarItem
+            key={`pin-${id}`}
+            icon={sidebarIcons.folder}
+            label={fileSystem[id].name}
+            active={currentFolderId === id}
+            onClick={() => onNavigate(id)}
+            onContextMenu={(e) => openContextMenu(e, {
+              isBackground: false,
+              isQuickAccess: true,
+              file: fileSystem[id],
+              hasClipboard: false,
+              selectedCount: 1,
+              targetId: id,
+            })}
           />
         ))}
       </Section>
@@ -516,6 +598,15 @@ export function ExplorerSidebar({
             onClick={() => onOpenSource?.(source.id, '/')}
             indent={1}
             right={<span className={netStatusDot(source.status)} />}
+            onContextMenu={(e) => openContextMenu(e, {
+              isBackground: false,
+              isNetwork: true,
+              networkKind: networkKind(source),
+              file: null,
+              hasClipboard: false,
+              selectedCount: 1,
+              targetId: source.id,
+            }, (actionId) => void handleSourceAction(actionId, source))}
           />
         ))}
       </Section>
@@ -552,6 +643,14 @@ export function ExplorerSidebar({
             active={githubActive}
             onClick={onOpenGithub}
             isCircular={true}
+            onContextMenu={(e) => openContextMenu(e, {
+              isBackground: false,
+              isRepo: true,
+              file: null,
+              hasClipboard: false,
+              selectedCount: 1,
+              targetId: ghUser.login,
+            })}
           />
         ) : (
           <EmptyLine>Aucun compte connecté</EmptyLine>
@@ -569,6 +668,14 @@ export function ExplorerSidebar({
                 active={false}
                 onClick={() => onOpenRepo?.(repo)}
                 indent={1}
+                onContextMenu={(e) => openContextMenu(e, {
+                  isBackground: false,
+                  isRepo: true,
+                  file: null,
+                  hasClipboard: false,
+                  selectedCount: 1,
+                  targetId: repo.full_name,
+                }, (actionId) => handleRepoAction(actionId, repo))}
               />
             );
           })
@@ -577,7 +684,7 @@ export function ExplorerSidebar({
 
       <div className="flex-1 min-h-4" />
 
-      <FtpConnectionDialog
+      <NewConnectionDialog
         open={ftpOpen}
         onOpenChange={setFtpOpen}
         onCreated={(source) => {

@@ -15,6 +15,7 @@ import { explorerToast } from './ExplorerToasts';
 import { api } from '@/lib/apiClient';
 import { getCached, invalidateCache } from '@/lib/githubCache';
 import { cn } from '@/lib/utils';
+import { openContextMenu } from '@/lib/contextMenuBus';
 
 const EXT_LANGUAGE: Record<string, string> = {
   ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
@@ -281,6 +282,33 @@ export function GitHubPanel({ onDetailContextChange }: Props) {
     void loadRepo(repo);
   };
 
+  const handleRepoAction = (actionId: string, repo: Repo) => {
+    if (actionId === 'open') { openRepo(repo); return; }
+    if (actionId === 'git.web') { window.open(repo.html_url, '_blank', 'noopener,noreferrer'); return; }
+    if (actionId === 'copy.url') { void navigator.clipboard?.writeText(repo.clone_url || repo.html_url); explorerToast.success('URL HTTPS copiée', repo.full_name); return; }
+    if (actionId === 'copy.url.ssh') { void navigator.clipboard?.writeText(repo.ssh_url || repo.html_url); explorerToast.success('URL SSH copiée', repo.full_name); return; }
+    if (actionId === 'git.clone') { void navigator.clipboard?.writeText(`git clone ${repo.clone_url || repo.html_url}`); explorerToast.git('Commande clone copiée', repo.full_name); return; }
+    if (actionId === 'git.pull') { explorerToast.git('Synchronisation simulée', repo.full_name); return; }
+    if (actionId === 'git.branch') { explorerToast.git('Branches', repo.default_branch); return; }
+    if (actionId === 'git.pr') { window.open(`${repo.html_url}/pulls`, '_blank', 'noopener,noreferrer'); return; }
+    if (actionId === 'git.history') { window.open(`${repo.html_url}/commits/${repo.default_branch}`, '_blank', 'noopener,noreferrer'); return; }
+    if (actionId === 'git.star') { explorerToast.git('Dépôt marqué', repo.full_name); return; }
+    if (actionId === 'settings') { window.open(`${repo.html_url}/settings`, '_blank', 'noopener,noreferrer'); return; }
+    explorerToast.info(`GitHub · ${actionId}`, repo.full_name);
+  };
+
+  const handleTreeAction = (actionId: string, item: TreeItem, action?: () => void) => {
+    if (!selectedRepo) return;
+    const encodedPath = item.path.split('/').map(encodeURIComponent).join('/');
+    if (actionId === 'open') { if (item.type === 'dir') action?.(); else void openFile(item); return; }
+    if (actionId === 'git.web') { window.open(`${selectedRepo.html_url}/blob/${viewingSha || selectedRepo.default_branch}/${encodedPath}`, '_blank', 'noopener,noreferrer'); return; }
+    if (actionId === 'copy.path') { void navigator.clipboard?.writeText(item.path); explorerToast.success('Chemin Git copié', item.path); return; }
+    if (actionId === 'copy.name') { void navigator.clipboard?.writeText(item.name); explorerToast.success('Nom copié', item.name); return; }
+    if (actionId === 'git.history') { window.open(`${selectedRepo.html_url}/commits/${viewingSha || selectedRepo.default_branch}/${encodedPath}`, '_blank', 'noopener,noreferrer'); return; }
+    if (actionId === 'git.download' && item.download_url) { window.open(item.download_url, '_blank', 'noopener,noreferrer'); return; }
+    explorerToast.git(`GitHub · ${actionId}`, item.path);
+  };
+
   const openCommit = (sha: string) => {
     if (!selectedRepo) return;
     play('open');
@@ -483,6 +511,15 @@ export function GitHubPanel({ onDetailContextChange }: Props) {
                     activePath={selectedFile?.item.path}
                     loadChildren={(path) => fetchDir(selectedRepo, path, viewingSha || selectedRepo.default_branch)}
                     onOpenFile={openFile}
+                    onContextMenu={(e, item, action) => openContextMenu(e, {
+                      isBackground: false,
+                      isGithubTreeItem: true,
+                      githubItemType: item.type === 'dir' ? 'dir' : 'file',
+                      file: null,
+                      hasClipboard: false,
+                      selectedCount: 1,
+                      targetId: item.path,
+                    }, (actionId) => handleTreeAction(actionId, item, action))}
                   />
                 )}
               </div>
@@ -689,6 +726,14 @@ export function GitHubPanel({ onDetailContextChange }: Props) {
             <button
               key={r.id}
               onClick={() => openRepo(r)}
+              onContextMenu={(e) => openContextMenu(e, {
+                isBackground: false,
+                isGithubRepoCard: true,
+                file: null,
+                hasClipboard: false,
+                selectedCount: 1,
+                targetId: r.full_name,
+              }, (actionId) => handleRepoAction(actionId, r))}
               onMouseEnter={playHover}
               className="group text-left flex flex-col gap-2 p-3 rounded-md border border-border/40 bg-[hsl(var(--explorer-surface))] hover:border-primary/30 transition-all"
             >

@@ -42,7 +42,7 @@ export function TabBar({ tabs, activeId, onActivate, onClose, onNew }: Props) {
 
   return (
     <div className="flex items-center h-9 bg-[hsl(220_24%_3%)] border-b border-border/40 select-none pl-2" style={{ WebkitAppRegion: 'drag' } as any}>
-      <div className="flex items-end h-full flex-1 min-w-0 gap-0.5 overflow-x-auto scrollbar-none" style={{ WebkitAppRegion: 'no-drag' } as any}>
+      <div className="flex items-end h-full flex-1 min-w-0 gap-0.5 overflow-x-auto scrollbar-none">
         {tabs.map(tab => {
           const active = tab.id === activeId;
           return (
@@ -56,6 +56,7 @@ export function TabBar({ tabs, activeId, onActivate, onClose, onNew }: Props) {
                   ? 'bg-[hsl(var(--explorer-surface))] text-foreground border-t border-l border-r border-border/40'
                   : 'text-muted-foreground hover:bg-[hsl(var(--explorer-hover))] hover:text-foreground'
               )}
+              style={{ WebkitAppRegion: 'no-drag' } as any}
             >
               {tab.kind === 'terminal'
                 ? <TerminalSquare size={12} className="text-emerald-400/80 shrink-0" />
@@ -78,6 +79,7 @@ export function TabBar({ tabs, activeId, onActivate, onClose, onNew }: Props) {
           onMouseEnter={playHover}
           className="h-6 w-6 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-[hsl(var(--explorer-hover))] rounded transition-colors mb-0.5 ml-0.5"
           aria-label="New tab"
+          style={{ WebkitAppRegion: 'no-drag' } as any}
         >
           <Plus size={13} />
         </button>

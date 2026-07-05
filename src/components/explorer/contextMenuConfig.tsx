@@ -39,6 +39,8 @@ export interface CtxContext {
   isMobileFolder?: boolean;
   isTerminal?: boolean;
   isGithubRepoCard?: boolean;
+  isGithubTreeItem?: boolean;
+  githubItemType?: 'file' | 'dir';
   file?: FileItem | null;
   hasClipboard: boolean;
   selectedCount: number;
@@ -182,6 +184,21 @@ export function buildContextMenu(ctx: CtxContext): CtxItem[] {
       { kind: 'item', icon: ClipboardCopy, label: 'Copier l\'URL SSH', id: 'copy.url.ssh' },
       { kind: 'sep' },
       { kind: 'item', icon: Settings, label: 'Paramètres du dépôt', id: 'settings' },
+    ];
+  }
+
+  // ── GitHub tree item (repo detail sidebar) ──
+  if (ctx.isGithubTreeItem) {
+    const isDir = ctx.githubItemType === 'dir';
+    return [
+      { kind: 'item', icon: isDir ? FolderOpen : FileText, label: isDir ? 'Déplier / ouvrir' : 'Ouvrir le fichier', id: 'open' },
+      { kind: 'item', icon: Globe, label: 'Voir sur github.com', id: 'git.web' },
+      { kind: 'sep' },
+      { kind: 'item', icon: ClipboardCopy, label: 'Copier le chemin', id: 'copy.path' },
+      { kind: 'item', icon: ClipboardCopy, label: 'Copier le nom', id: 'copy.name' },
+      { kind: 'sep' },
+      { kind: 'item', icon: History, label: 'Historique du fichier', id: 'git.history' },
+      { kind: 'item', icon: Download, label: 'Télécharger', id: 'git.download' },
     ];
   }
 

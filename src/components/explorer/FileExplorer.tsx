@@ -5,6 +5,7 @@ import { I18nProvider, useI18n, Locale } from '@/i18n/LanguageContext';
 import { TabBar, TabState } from './TabBar';
 import { ExplorerTab } from './ExplorerTab';
 import { TerminalPanel } from './TerminalPanel';
+import { SplitView } from './SplitView';
 import { CommandPalette } from './CommandPalette';
 import { useSound } from '@/hooks/useSound';
 import { cn } from '@/lib/utils';
@@ -50,9 +51,38 @@ function ExplorerInner({
 }) {
   const { locale, setLocale } = useI18n();
   const { play } = useSound();
-  const [tabs, setTabs] = useState<TabState[]>(() => [{ id: makeId(), folderId: initialFolderId }]);
-  const [activeId, setActiveId] = useState<string>(() => tabs[0].id);
+  const [tabs, setTabs] = useState<TabState[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('explorer.tabs.v1') || 'null') as TabState[] | null;
+      if (saved?.length) return saved;
+    } catch { /* ignore */ }
+    return [{ id: makeId(), folderId: initialFolderId }];
+  });
+  const [activeId, setActiveId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('explorer.activeTab.v1');
+      if (saved) return saved;
+    } catch { /* ignore */ }
+    return tabs[0].id;
+  });
+  const [split, setSplit] = useState<{ leftFolderId: string; rightFolderId: string } | null>(() => {
+    try { return JSON.parse(localStorage.getItem('explorer.split.v1') || 'null'); } catch { return null; }
+  });
   const [cmdOpen, setCmdOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('explorer.tabs.v1', JSON.stringify(tabs));
+      localStorage.setItem('explorer.activeTab.v1', activeId);
+    } catch { /* ignore */ }
+  }, [activeId, tabs]);
+
+  useEffect(() => {
+    try {
+      if (split) localStorage.setItem('explorer.split.v1', JSON.stringify(split));
+      else localStorage.removeItem('explorer.split.v1');
+    } catch { /* ignore */ }
+  }, [split]);
 
   const newTab = useCallback(
     (folderId: string = 'root', kind: 'explorer' | 'terminal' = 'explorer') => {
@@ -84,13 +114,19 @@ function ExplorerInner({
       newTab(folderId, 'explorer');
     };
     const onNewTerm = () => newTab('root', 'terminal');
+    const onOpenRight = (e: Event) => {
+      const detail = (e as CustomEvent<{ leftFolderId?: string; rightFolderId?: string }>).detail || {};
+      setSplit({ leftFolderId: detail.leftFolderId || tabs.find((t) => t.id === activeId)?.folderId || 'root', rightFolderId: detail.rightFolderId || 'root' });
+    };
     window.addEventListener('explorer:new-tab', onNewTab);
     window.addEventListener('explorer:new-terminal-tab', onNewTerm);
+    window.addEventListener('explorer:open-right', onOpenRight);
     return () => {
       window.removeEventListener('explorer:new-tab', onNewTab);
       window.removeEventListener('explorer:new-terminal-tab', onNewTerm);
+      window.removeEventListener('explorer:open-right', onOpenRight);
     };
-  }, [newTab]);
+  }, [activeId, newTab, tabs]);
 
   // Global shortcuts
   useEffect(() => {
@@ -108,6 +144,10 @@ function ExplorerInner({
         e.preventDefault();
         closeTab(activeId);
       }
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'w' && split) {
+        e.preventDefault();
+        setSplit(null);
+      }
       if (ctrl && /^[1-9]$/.test(e.key)) {
         const idx = parseInt(e.key, 10) - 1;
         if (tabs[idx]) {
@@ -118,7 +158,7 @@ function ExplorerInner({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [activeId, tabs, newTab, closeTab]);
+  }, [activeId, tabs, newTab, closeTab, split]);
 
   const handleFolderChange = useCallback(
     (tabId: string, folderId: string) => {
@@ -135,7 +175,15 @@ function ExplorerInner({
       <TabBar tabs={tabs} activeId={activeId} onActivate={setActiveId} onClose={closeTab} onNew={() => newTab()} />
 
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {tabs.map((tab) => {
+        {split ? (
+          <SplitView
+            leftFolderId={split.leftFolderId}
+            rightFolderId={split.rightFolderId}
+            onLeftFolderChange={(id) => setSplit((prev) => prev ? { ...prev, leftFolderId: id } : prev)}
+            onRightFolderChange={(id) => setSplit((prev) => prev ? { ...prev, rightFolderId: id } : prev)}
+            onOpenCommandPalette={() => setCmdOpen(true)}
+          />
+        ) : tabs.map((tab) => {
           const isActive = tab.id === activeId;
           if (!isActive) return null;
           if (tab.kind === 'terminal') {

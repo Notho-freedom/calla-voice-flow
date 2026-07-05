@@ -6,7 +6,9 @@ import { useI18n } from '@/i18n/LanguageContext';
 import { cn } from '@/lib/utils';
 import { openContextMenu } from '@/lib/contextMenuBus';
 import { useExplorerSources } from '@/hooks/useExplorerSources';
-import { FtpConnectionDialog } from './FtpConnectionDialog';
+import { NewConnectionDialog } from './NewConnectionDialog';
+import { localServers } from '@/data/localServers';
+import { explorerToast } from './ExplorerToasts';
 import type { ExplorerSource } from '@/types/explorerSources';
 
 interface Props {
@@ -63,7 +65,16 @@ function EmptyStateLine({ title, description }: { title: string; description: st
   );
 }
 
-export function DriveOverview({ onNavigateTrash, onOpenSource, mode }: Props) {
+function networkKind(source: ExplorerSource) {
+  const provider = (source as ExplorerSource & { provider?: string }).provider || source.type;
+  if (provider === 'gdrive') return 'gdrive';
+  if (provider === 'onedrive') return 'onedrive';
+  if (provider === 'ftp' || provider === 'sftp') return 'ftp';
+  if (provider === 'smb') return 'smb';
+  return 'cloud';
+}
+
+export function DriveOverview({ onNavigateTrash, onOpenLocalServer, onOpenSource, mode }: Props) {
   const { t } = useI18n();
   const { sources, isAvailable, refresh } = useExplorerSources();
   const [ftpOpen, setFtpOpen] = useState(false);
@@ -84,9 +95,45 @@ export function DriveOverview({ onNavigateTrash, onOpenSource, mode }: Props) {
             onClick={() => setFtpOpen(true)}
             className="h-8 px-3 rounded border border-border/40 hover:bg-[hsl(var(--explorer-hover))] text-[12px] flex items-center gap-1.5"
           >
-            <Plus size={12} /> Ajouter FTP
+            <Plus size={12} /> Ajouter source
           </button>
         </div>
+
+        <h3 className="section-label mb-3">Serveurs locaux</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mb-7">
+          {localServers.map((server) => (
+            <div
+              key={server.id}
+              onClick={() => onOpenLocalServer?.(server.id)}
+              onContextMenu={(e) => openContextMenu(e, {
+                isBackground: false,
+                isServer: true,
+                serverKind: server.framework.toLowerCase().includes('postgres') ? 'db' : server.framework.toLowerCase().includes('redis') ? 'cache' : 'http',
+                serverRunning: server.status === 'running',
+                file: null,
+                hasClipboard: false,
+                selectedCount: 1,
+                targetId: server.id,
+              }, async (actionId) => {
+                if (actionId === 'open') onOpenLocalServer?.(server.id);
+                else if (actionId === 'server.browser' || actionId === 'copy.url') {
+                  if (actionId === 'server.browser') window.open(server.url, '_blank', 'noopener,noreferrer');
+                  else { await navigator.clipboard?.writeText(server.url); explorerToast.success('URL copiée', server.url); }
+                } else explorerToast.network(`Serveur · ${actionId}`, server.name);
+              })}
+              className="flex items-center gap-3 p-3 rounded-lg bg-[hsl(var(--muted))] hover:bg-[hsl(var(--explorer-hover))] cursor-pointer transition-colors"
+            >
+              <Server size={30} className="text-primary/80 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-normal truncate">{server.name}</p>
+                <p className="text-[11px] text-muted-foreground truncate font-mono">:{server.port} · {server.framework}</p>
+              </div>
+              <span className={cn('w-2 h-2 rounded-full shrink-0', server.status === 'running' ? 'bg-emerald-400' : server.status === 'error' ? 'bg-red-400' : 'bg-muted-foreground/50')} />
+            </div>
+          ))}
+        </div>
+
+        <h3 className="section-label mb-3">Emplacements réseau</h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {networkSources.length === 0 ? (
@@ -98,6 +145,19 @@ export function DriveOverview({ onNavigateTrash, onOpenSource, mode }: Props) {
             <div
               key={source.id}
               onClick={() => onOpenSource?.(source.id, '/')}
+              onContextMenu={(e) => openContextMenu(e, {
+                isBackground: false,
+                isNetwork: true,
+                networkKind: networkKind(source),
+                file: null,
+                hasClipboard: false,
+                selectedCount: 1,
+                targetId: source.id,
+              }, async (actionId) => {
+                if (actionId === 'open' || actionId === 'open.tab') onOpenSource?.(source.id, '/');
+                else if (actionId === 'copy.path') { await navigator.clipboard?.writeText(source.root || source.host || source.name); explorerToast.success('Chemin copié', source.name); }
+                else explorerToast.network(`Réseau · ${actionId}`, source.name);
+              })}
               className="flex items-center gap-3 p-3 rounded-lg bg-[hsl(var(--muted))] hover:bg-[hsl(var(--explorer-hover))] cursor-pointer transition-colors"
             >
               <HDIcon src={sourceIcon(source)} size={36} alt={source.name} fallbackEmoji="☁️" />
@@ -115,7 +175,7 @@ export function DriveOverview({ onNavigateTrash, onOpenSource, mode }: Props) {
           ))}
         </div>
 
-        <FtpConnectionDialog
+        <NewConnectionDialog
           open={ftpOpen}
           onOpenChange={setFtpOpen}
           onCreated={(source) => {
