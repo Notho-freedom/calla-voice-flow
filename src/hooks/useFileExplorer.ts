@@ -225,9 +225,9 @@ export function useFileExplorer(initialFolderId?: string) {
   const copyItems = useCallback((ids: string[]) => setClipboard({ items: ids, operation: 'copy' }), []);
   const cutItems = useCallback((ids: string[]) => setClipboard({ items: ids, operation: 'cut' }), []);
 
-  const pasteItems = useCallback(() => {
+  const pasteItems = useCallback((targetFolderId?: string) => {
     if (clipboard.items.length === 0 || clipboard.operation === null) return 0;
-    const target = nav.currentFolderId;
+    const target = targetFolderId || nav.currentFolderId;
     let count = 0;
     setPastedItems(prev => {
       const next = { ...prev };
