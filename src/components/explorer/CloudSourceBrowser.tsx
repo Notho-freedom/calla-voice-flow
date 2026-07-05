@@ -24,6 +24,7 @@ interface Props {
   onBack: () => void;
   onPathChange?: (path: string) => void;
   onActiveFileChange?: (file: FileItem | null) => void;
+  onPreviewRequest?: () => void;
 }
 
 function parentPath(path: string) {
@@ -124,6 +125,7 @@ export function CloudSourceBrowser({
   onBack,
   onPathChange,
   onActiveFileChange,
+  onPreviewRequest,
 }: Props) {
   const { list, test } = useExplorerSources();
   const [path, setPath] = useState(initialPath);
@@ -171,9 +173,14 @@ export function CloudSourceBrowser({
 
   const openItem = useCallback((id: string) => {
     const item = items.find((entry) => entry.id === id);
-    if (!item || item.type !== 'folder') return;
-    void load(item.path || joinSourcePath(path, item.name));
-  }, [items, load, path]);
+    if (!item) return;
+    if (item.type === 'folder') void load(item.path || joinSourcePath(path, item.name));
+    else if (['image', 'video', 'audio'].includes(item.type)) {
+      setSelectedItems([id]);
+      onActiveFileChange?.(item);
+      onPreviewRequest?.();
+    }
+  }, [items, load, onActiveFileChange, onPreviewRequest, path]);
 
   const testConnection = useCallback(async () => {
     try {
@@ -263,7 +270,9 @@ export function CloudSourceBrowser({
               return;
             }
             setSelectedItems([id]);
-            onActiveFileChange?.(visibleItems.find((item) => item.id === id) || null);
+            const file = visibleItems.find((item) => item.id === id) || null;
+            onActiveFileChange?.(file);
+            if (file && ['image', 'video', 'audio'].includes(file.type)) onPreviewRequest?.();
           }}
           onOpen={openItem}
           onContextMenu={(e, id) => {
