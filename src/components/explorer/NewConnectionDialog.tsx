@@ -9,12 +9,15 @@ const GDRIVE = 'https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive
 const ONEDRIVE = 'https://upload.wikimedia.org/wikipedia/commons/3/3c/Microsoft_Office_OneDrive_%282019%E2%80%93present%29.svg';
 const DROPBOX = 'https://upload.wikimedia.org/wikipedia/commons/7/78/Dropbox_Icon.svg';
 const S3 = 'https://cdn.jsdelivr.net/gh/PKief/vscode-material-icon-theme@latest/icons/aws.svg';
+const BOX = 'https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/box.svg';
+const ICLOUD = 'https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/icloud.svg';
+const LOCAL_SOURCES_KEY = 'explorer.sources.local.v1';
 
 export type ConnectionType =
   | 'ftp' | 'ftps' | 'sftp'
   | 'smb' | 'webdav'
   | 'gdrive' | 'onedrive' | 'dropbox'
-  | 's3';
+  | 'box' | 'icloud' | 's3';
 
 interface TypeMeta {
   id: ConnectionType;
@@ -34,6 +37,8 @@ const TYPES: TypeMeta[] = [
   { id: 'gdrive',   label: 'Google Drive', hint: 'OAuth utilisateur (client ID requis)', icon: <HDIcon src={GDRIVE} size={22} alt="Google Drive" />, fields: ['clientId','clientSecret','refreshToken'] },
   { id: 'onedrive', label: 'OneDrive',     hint: 'Microsoft Graph API',                  icon: <HDIcon src={ONEDRIVE} size={22} alt="OneDrive" />, fields: ['clientId','clientSecret','refreshToken'] },
   { id: 'dropbox',  label: 'Dropbox',      hint: 'App token personnel',                  icon: <HDIcon src={DROPBOX} size={22} alt="Dropbox" />, fields: ['token'] },
+  { id: 'box',      label: 'Box',          hint: 'OAuth Box / developer token',          icon: <HDIcon src={BOX} size={22} alt="Box" />, fields: ['clientId','clientSecret','refreshToken'] },
+  { id: 'icloud',   label: 'iCloud Drive', hint: 'App-specific password / token',         icon: <HDIcon src={ICLOUD} size={22} alt="iCloud Drive" />, fields: ['user','password','path'] },
   { id: 's3',       label: 'S3 / MinIO',   hint: 'AWS S3 ou compatible',                 icon: <HDIcon src={S3} size={22} alt="S3" />, fields: ['endpoint','bucket','accessKey','secretKey'] },
 ];
 
@@ -45,6 +50,39 @@ const initialFor = (t: TypeMeta): FormState => {
   if (t.fields.includes('secure')) base.secure = t.id === 'ftps';
   return base;
 };
+
+function cloudLabel(type: ConnectionType) {
+  if (type === 'gdrive') return 'Google Drive';
+  if (type === 'onedrive') return 'OneDrive';
+  if (type === 'dropbox') return 'Dropbox';
+  if (type === 'box') return 'Box';
+  if (type === 'icloud') return 'iCloud Drive';
+  if (type === 's3') return 'S3';
+  if (type === 'webdav') return 'WebDAV';
+  if (type === 'sftp') return 'SFTP';
+  return type.toUpperCase();
+}
+
+function persistLocalSource(type: ConnectionType, meta: TypeMeta, form: FormState) {
+  const source = {
+    id: `local-src-${type}-${Date.now()}`,
+    type: (['ftp', 'sftp'].includes(type) ? 'ftp' : ['smb', 'webdav'].includes(type) ? 'network' : 'cloud'),
+    provider: type,
+    name: (form.name as string) || (form.host as string) || (form.bucket as string) || cloudLabel(type),
+    host: form.host as string | undefined,
+    port: form.port as number | undefined,
+    root: (form.path as string) || (form.bucket as string) || cloudLabel(type),
+    status: 'configured',
+    readOnly: false,
+    mock: true,
+  };
+  try {
+    const list = JSON.parse(localStorage.getItem(LOCAL_SOURCES_KEY) || '[]');
+    localStorage.setItem(LOCAL_SOURCES_KEY, JSON.stringify([...list, source]));
+  } catch { /* ignore */ }
+  window.dispatchEvent(new CustomEvent('explorer:sources-changed'));
+  return source;
+}
 
 export function NewConnectionDialog({
   open, onOpenChange, onCreated, initialType,
@@ -87,15 +125,24 @@ export function NewConnectionDialog({
       }
       setStatus('saving');
       const payload = { ...form, type, name: (form.name as string) || (form.host as string) || meta.label };
-      const saved = await api.post<{ success: boolean; source: { id: string; name: string }; error?: string }>(
-        '/api/sources', payload,
-      );
+      let saved = await api.post<{ success: boolean; source: { id: string; name: string }; error?: string }>('/api/sources', payload);
+      if (!saved.success && !['ftp', 'ftps'].includes(type)) {
+        saved = { success: true, source: persistLocalSource(type, meta, form) };
+      }
       if (!saved.success) { setStatus('error'); setError(saved.error || 'Impossible d\'enregistrer la source.'); return; }
       onCreated(saved.source);
       onOpenChange(false);
       setStatus('idle');
       setForm(initialFor(meta));
     } catch (err) {
+      if (!['ftp', 'ftps'].includes(type)) {
+        const source = persistLocalSource(type, meta, form);
+        onCreated(source);
+        onOpenChange(false);
+        setStatus('idle');
+        setForm(initialFor(meta));
+        return;
+      }
       setStatus('error');
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
     }
@@ -246,11 +293,10 @@ export function NewConnectionDialog({
               </div>
             )}
 
-            {(type === 'gdrive' || type === 'onedrive') && (
+            {(['gdrive', 'onedrive', 'box', 'icloud', 'dropbox', 's3', 'webdav', 'sftp'] as ConnectionType[]).includes(type) && (
               <p className="text-[10px] text-muted-foreground/70 leading-relaxed pt-1 border-t border-border/20 mt-2">
                 <Cloud size={10} className="inline mr-1" />
-                L'autorisation OAuth complète nécessite un flux serveur. Fournissez ici les identifiants générés
-                depuis votre console développeur ({type === 'gdrive' ? 'Google Cloud' : 'Azure Portal'}).
+                Connexion front-only persistée localement pour l’instant. La navigation affiche l’emplacement et garde les paramètres, sans backend fournisseur réel.
               </p>
             )}
 
