@@ -212,7 +212,7 @@ export function ExplorerTab({ active, initialFolderId, onFolderChange, onOpenCom
       totalBytes,
       items,
     });
-    explorer.pasteItems();
+    explorer.pasteItems(targetFolderId);
   }, [explorer, ops, play]);
   const handleDelete = useCallback((ids: string[]) => {
     play('delete');
@@ -278,6 +278,35 @@ export function ExplorerTab({ active, initialFolderId, onFolderChange, onOpenCom
     }
     const ctx = ctxMenu.ctx;
     const itemId = ctx.file?.id || ctx.targetId;
+    const sourceTarget = itemId ? sourceApi.sources.find((source) => source.id === itemId) : null;
+    if (sourceTarget) {
+      switch (actionId) {
+        case 'open':
+        case 'open.tab':
+        case 'open.right':
+          handleOpenSource(sourceTarget.id, '/');
+          explorerToast.success('Emplacement ouvert', sourceTarget.name);
+          return;
+        case 'open.window':
+          handleOpenSource(sourceTarget.id, '/');
+          explorerToast.info('Nouvelle fenêtre', 'Non disponible pour les sources réelles dans le navigateur.');
+          return;
+        case 'copy.path':
+          navigator.clipboard?.writeText(sourceTarget.root || sourceTarget.host || sourceTarget.name);
+          explorerToast.success('Chemin copié', sourceTarget.name);
+          return;
+        case 'pin':
+          explorerToast.success('Source épinglée', sourceTarget.name);
+          return;
+        case 'terminal':
+          handleOpenTerminal(explorer.nav.currentFolderId);
+          return;
+        case 'refresh':
+          setSourceRefreshSignal((value) => value + 1);
+          explorerToast.info('Actualisé', sourceTarget.name);
+          return;
+      }
+    }
     switch (actionId) {
       case 'open': if (itemId) handleOpen(itemId); break;
       case 'open.tab':
