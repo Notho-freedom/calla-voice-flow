@@ -37,6 +37,32 @@ interface Props {
   onOpenCommandPalette: () => void;
 }
 
+const PINNED_KEY = 'explorer.quickAccess.pinned.v1';
+
+function isPreviewMedia(item?: FileItem | null) {
+  return !!item && ['image', 'video', 'audio'].includes(item.type);
+}
+
+function openFolderWindow(folderId: string) {
+  const shell = typeof window !== 'undefined' ? (window as any).cognitiveWindow : null;
+  if (shell?.openFolder) {
+    shell.openFolder(folderId);
+    return;
+  }
+  const url = new URL(window.location.href);
+  url.hash = `/explorer?folderId=${encodeURIComponent(folderId)}`;
+  window.open(url.toString(), '_blank', 'popup,width=1280,height=820');
+}
+
+function readPinned(): string[] {
+  try { return JSON.parse(localStorage.getItem(PINNED_KEY) || '[]'); } catch { return []; }
+}
+
+function writePinned(ids: string[]) {
+  try { localStorage.setItem(PINNED_KEY, JSON.stringify(Array.from(new Set(ids)))); } catch { /* noop */ }
+  window.dispatchEvent(new CustomEvent('explorer:pins-changed'));
+}
+
 export function ExplorerTab({ active, initialFolderId, onFolderChange, onOpenCommandPalette }: Props) {
   const explorer = useFileExplorer(initialFolderId);
   const { play } = useSound();
@@ -81,6 +107,11 @@ export function ExplorerTab({ active, initialFolderId, onFolderChange, onOpenCom
       }
     }
   }, [explorer, play]);
+
+  const handleSelect = useCallback((id: string, mode: 'single' | 'ctrl' | 'shift' = 'single') => {
+    explorer.selectItem(id, mode);
+    if (mode === 'single' && isPreviewMedia(fileSystem[id])) explorer.openPreview();
+  }, [explorer]);
 
   const handleNavigate = useCallback((id: string) => {
     setShowGithub(false);
@@ -205,6 +236,18 @@ export function ExplorerTab({ active, initialFolderId, onFolderChange, onOpenCom
     explorerToast.info('Terminal ouvert', explorer.buildFullPath(folderId || explorer.nav.currentFolderId));
   }, [explorer, notif]);
 
+  const pinFolder = useCallback((id?: string) => {
+    if (!id || fileSystem[id]?.type !== 'folder') return;
+    writePinned([...readPinned(), id]);
+    explorerToast.success('Épinglé à l\'accès rapide', fileSystem[id]?.name || id);
+  }, []);
+
+  const unpinFolder = useCallback((id?: string) => {
+    if (!id) return;
+    writePinned(readPinned().filter((pin) => pin !== id));
+    explorerToast.info('Détaché de l\'accès rapide', fileSystem[id]?.name || id);
+  }, []);
+
   const handleNewFile = useCallback((kind: string) => {
     explorer.createFolder();
     explorerToast.info(`Nouveau ${kind} créé`, 'Entrez le nom');
@@ -238,12 +281,16 @@ export function ExplorerTab({ active, initialFolderId, onFolderChange, onOpenCom
     switch (actionId) {
       case 'open': if (itemId) handleOpen(itemId); break;
       case 'open.tab':
-      case 'open.right':
         if (itemId && fileSystem[itemId]?.type === 'folder') {
           window.dispatchEvent(new CustomEvent('explorer:new-tab', { detail: { folderId: itemId } }));
         } else if (itemId) handleOpen(itemId);
         break;
-      case 'open.window': if (itemId) handleOpen(itemId); break;
+      case 'open.right':
+        if (itemId && fileSystem[itemId]?.type === 'folder') {
+          window.dispatchEvent(new CustomEvent('explorer:open-right', { detail: { leftFolderId: explorer.nav.currentFolderId, rightFolderId: itemId } }));
+        } else if (itemId) handleOpen(itemId);
+        break;
+      case 'open.window': if (itemId) openFolderWindow(itemId); break;
       case 'preview': if (itemId) { explorer.selectItem(itemId); explorer.openPreview(); } break;
       case 'cut': handleCut(itemId ? [itemId] : explorer.nav.selectedItems); break;
       case 'copy': handleCopy(itemId ? [itemId] : explorer.nav.selectedItems); break;
@@ -269,15 +316,15 @@ export function ExplorerTab({ active, initialFolderId, onFolderChange, onOpenCom
           ops.startJob({ type: 'extract', source: [f?.name || itemId], destination: explorer.buildFullPath(explorer.nav.currentFolderId), totalBytes: (f?.size || 5_000_000), items: [f?.name || itemId] });
         }
         break;
-      case 'pin': explorerToast.success('Épinglé à l\'accès rapide'); break;
-      case 'unpin': explorerToast.info('Détaché de l\'accès rapide'); break;
+      case 'pin': pinFolder(itemId); break;
+      case 'unpin': unpinFolder(itemId); break;
       case 'share': explorerToast.info('Partage', 'Ouverture de la feuille de partage…'); break;
       case 'view': explorerToast.info('Affichage', 'Utilisez la barre d\'outils pour changer de vue'); break;
       case 'sort': explorerToast.info('Trier par', 'Cliquez sur un en-tête de colonne'); break;
       default:
         explorerToast.info(`Action : ${actionId}`, 'Simulation');
     }
-  }, [ctxMenu, explorer, handleCopy, handleCopyName, handleCopyPath, handleCut, handleDelete, handleOpen, handleOpenTerminal, handlePaste, handleProperties, handleNewFile, handleCompress, ops, play]);
+  }, [ctxMenu, explorer, handleCopy, handleCopyName, handleCopyPath, handleCut, handleDelete, handleOpen, handleOpenTerminal, handlePaste, handleProperties, handleNewFile, handleCompress, ops, play, pinFolder, unpinFolder]);
 
   const virtualId = explorer.nav.location.type === 'virtual' ? explorer.nav.location.id : null;
   const isMobileRoot = explorer.nav.currentFolderId === 'mobile-root';
@@ -366,8 +413,17 @@ export function ExplorerTab({ active, initialFolderId, onFolderChange, onOpenCom
         }
       });
     }
+    const items = ids.map(id => fileSystem[id]?.name || id);
+    const totalBytes = ids.reduce((s, id) => s + (fileSystem[id]?.size || 1_000_000), 0);
+    ops.startJob({
+      type: copy ? 'copy' : 'move',
+      source: items,
+      destination: explorer.buildFullPath(targetFolderId) || targetFolderId,
+      totalBytes,
+      items,
+    });
     explorer.clearSelection();
-  }, [explorer, fileSystem, play]);
+  }, [explorer, ops, play]);
 
   return (
     <div
@@ -468,6 +524,7 @@ export function ExplorerTab({ active, initialFolderId, onFolderChange, onOpenCom
                     onNavigate={handleNavigate}
                     mode="network"
                     onOpenSource={handleOpenSource}
+                    onOpenLocalServer={(id) => { setShowGithub(false); setActiveSourceId(null); setActiveServerId(id); }}
                   />
                 ) : isMobileRoot ? (
                   <MobileDeviceView onNavigate={handleNavigate} />
@@ -483,7 +540,7 @@ export function ExplorerTab({ active, initialFolderId, onFolderChange, onOpenCom
                     renamedItems={explorer.renamedItems}
                     sortField={explorer.nav.sortField}
                     sortDirection={explorer.nav.sortDirection}
-                    onSelect={explorer.selectItem}
+                    onSelect={handleSelect}
                     onOpen={handleOpen}
                     onContextMenu={handleContextMenu}
                     onClearSelection={explorer.clearSelection}
