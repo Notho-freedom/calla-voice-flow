@@ -15,6 +15,7 @@ import { saveGithubToken } from './GitHubAuthCard';
 import { explorerToast } from './ExplorerToasts';
 import { fileSystem } from '@/data/mockFileSystem';
 import { api } from '@/lib/apiClient';
+import type { NetworkKind } from './contextMenuConfig';
 import type { ExplorerSource } from '@/types/explorerSources';
 
 interface Props {
@@ -93,7 +94,7 @@ function sourceIcon(source: ExplorerSource) {
   return sidebarIcons.folder;
 }
 
-function networkKind(source: ExplorerSource) {
+function networkKind(source: ExplorerSource): NetworkKind {
   const provider = (source as ExplorerSource & { provider?: string }).provider || source.type;
   if (provider === 'gdrive') return 'gdrive';
   if (provider === 'onedrive') return 'onedrive';
