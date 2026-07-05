@@ -511,6 +511,7 @@ export function ExplorerTab({ active, initialFolderId, onFolderChange, onOpenCom
                     testSignal={sourceTestSignal}
                     onPathChange={setActiveSourcePath}
                     onActiveFileChange={setActiveSourceFile}
+                    onPreviewRequest={explorer.openPreview}
                     onBack={() => { setActiveSourceId(null); setActiveSourcePath('/'); setActiveSourceFile(null); }}
                   />
                 ) : activeServer ? (
