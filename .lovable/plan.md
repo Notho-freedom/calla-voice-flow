@@ -1,84 +1,50 @@
+## Plan — Améliorations Explorer (batch complet, tout de suite)
 
+### 1. Terminal — splitter + onglet
+- Envelopper la zone `[contenu explorer | TerminalPanel]` dans un `ResizablePanelGroup direction="vertical"` (dans `ExplorerTab.tsx`).
+  - Terminal : `defaultSize=30`, `minSize=10`, `maxSize=70`, hauteur persistée (localStorage `explorer.terminalHeight`).
+  - Handle horizontal visible entre les deux.
+- Ajouter bouton "Ouvrir dans un onglet" dans le header du `TerminalPanel` → crée un nouvel onglet spécial (type `terminal`) dans `TabBar` qui affiche `TerminalPanel` en plein écran (sans arborescence de fichiers). Nouveau champ `tab.kind: 'explorer' | 'terminal'`.
 
-## Aura Voice Agent MVP — Confirmation d'appels automatisés
+### 2. Cache pour dépôts GitHub
+- Créer `src/lib/githubCache.ts` : cache en mémoire + localStorage (TTL 5 min) avec clés `repo:{owner/name}`, `tree:{sha}`, `commits:{owner/name}`, `file:{sha}:{path}`.
+- Dans `GitHubPanel`, avant chaque `fetch` GitHub : lire le cache ; si présent, afficher instantanément puis revalider en arrière-plan (SWR pattern). Invalidation manuelle via le bouton "actualiser".
 
-### Vue d'ensemble
-Un système qui appelle automatiquement les participants d'une campagne (réunion, event), leur joue un message vocal généré par ElevenLabs, et enregistre leur réponse via le clavier du téléphone (DTMF).
+### 3. Page détail dépôt — refonte
+- **Arbre style VS Code** à la place de la liste plate : nouveau composant `GitHubFileTree` (récursif, chevrons, indentation 12px, icônes de fichiers/dossiers via `FileIcon`/`iconRegistry`, dossiers d'abord, tri alpha, chargement lazy des sous-dossiers via `git/trees`).
+- **Suppression du panneau commits** : garder uniquement la version `<select>` compacte dans la barre de titre de l'éditeur (comportement déjà prévu comme fallback → devient le comportement par défaut). Monaco occupe toute la largeur restante.
+- **Empty state Monaco** : quand aucun fichier sélectionné, afficher un `EmptyState` (icône GitHub + "Sélectionnez un fichier dans l'arbre") au lieu de Monaco.
+- **Réorganisation header** :
+  - À gauche, juste après l'icône terminal de la Toolbar : `[← retour] [avatar] [nom du dépôt] [badge SHA]`.
+  - À droite : seul le bouton "actualiser" reste.
+  - Injection via la prop `githubHeader` déjà prévue, mais scindée en `githubHeaderLeft` / `githubHeaderRight`.
 
----
+### 4. GitHubAuthDialog — refonte de l'en-tête
+- Supprimer le texte descriptif actuel en haut.
+- Nouveau header épuré : icône GitHub + titre court "Connecter un compte GitHub" + petit lien "Créer un token" (discret, aligné à droite).
+- Garder le corps (`GitHubAuthCard`) tel quel.
 
-### 1. Setup des services
+### 5. Page Réseaux — activation des réseaux locaux + nouvelles sources cloud
+- **Réseaux locaux** : afficher la section "Serveurs locaux" (données `src/data/localServers.ts` déjà présentes) dans le panneau Réseau ; clic → `LocalServerDetail` (déjà existant) qui explore les routes.
+- **Nouvelles sources cloud** (front-end uniquement, cartes dans `NewConnectionDialog` + entrées sidebar) :
+  - Google Drive, OneDrive, Dropbox, Box, iCloud Drive, Amazon S3, WebDAV, SFTP.
+  - Chaque source : icône, formulaire de connexion mocké (champs adaptés), stockage localStorage. Aucun back-end pour l'instant — juste UI + persistance.
 
-**Twilio** (tu n'as pas encore de compte) :
-- Créer un compte sur [twilio.com](https://www.twilio.com) (trial gratuit avec ~$15 de crédit)
-- Acheter un numéro de téléphone (environ $1/mois)
-- On connectera Twilio via le connecteur Lovable intégré
+### 6. Ouvrir un dossier à droite (split via clic droit)
+- Ajouter entrée "Ouvrir à droite" dans le menu contextuel des dossiers (`contextMenuConfig.tsx`).
+- Action → active `SplitView` avec le dossier courant à gauche et le dossier cible à droite (utilise `SplitView` existant, initialise `rightFolderId`).
 
-**ElevenLabs** :
-- Tu as déjà ta clé API → on la stocke comme secret dans le projet
+### Ordre d'exécution
+1. Cache GitHub (gain UX immédiat)
+2. Refonte page détail dépôt (arbre + empty state + select commits + repositionnement header)
+3. Splitter terminal + onglet terminal
+4. GitHubAuthDialog refonte header
+5. Réseaux locaux + nouvelles sources cloud
+6. "Ouvrir à droite" via clic droit
 
-**Supabase** (Lovable Cloud) :
-- Base de données pour les campagnes, participants et réponses
-- Edge Functions pour orchestrer les appels
-
----
-
-### 2. Base de données (3 tables)
-
-- **campaigns** : nom, description, date/heure de la réunion, message vocal (texte), audio_url (fichier généré), statut
-- **participants** : lié à une campagne, nom, téléphone, statut de réponse (pending/confirmed/declined/callback)
-- **call_logs** : historique des appels (participant, timestamp, durée, réponse DTMF)
-
----
-
-### 3. Interface utilisateur
-
-**Page Campagnes** :
-- Liste des campagnes avec statut (brouillon, en cours, terminée)
-- Stats en temps réel : X confirmés / Y refusés / Z en attente
-
-**Création de campagne** :
-- Formulaire : nom, date/heure, message vocal (texte libre)
-- Ajout de participants (nom + numéro de téléphone)
-- Bouton "Générer l'audio" → appelle ElevenLabs, prévisualisation avec player audio
-- Bouton "Lancer la campagne" → déclenche les appels
-
-**Détail campagne** :
-- Liste des participants avec leur statut (icônes visuelles : ✅ ❌ ⏳ 🔁)
-- Player audio du message
-- Bouton relancer les "en attente"
-
----
-
-### 4. Edge Functions (backend)
-
-**generate-campaign-audio** :
-- Reçoit le texte du message
-- Appelle l'API ElevenLabs → génère un MP3
-- Stocke le fichier dans Supabase Storage
-- Retourne l'URL audio
-
-**start-campaign-calls** :
-- Pour chaque participant "pending" de la campagne
-- Déclenche un appel Twilio via le connecteur gateway
-- L'appel joue l'audio pré-généré + attend une touche DTMF :
-  - **1** = Confirmé
-  - **2** = Refusé  
-  - **3** = Rappeler plus tard
-
-**twilio-webhook** :
-- Reçoit la réponse DTMF de Twilio
-- Met à jour le statut du participant dans la DB
-- Si "rappeler" → marque pour relance
-
----
-
-### 5. Flow utilisateur complet
-
-1. Tu crées une campagne "Réunion Produit — Lundi 10h"
-2. Tu ajoutes 5 participants avec leurs numéros
-3. Tu écris le message : *"Bonjour, ici Aura. Réunion produit lundi à 10h. Appuyez sur 1 pour confirmer, 2 pour refuser, 3 pour être rappelé."*
-4. Tu cliques "Générer l'audio" → tu entends la voix ElevenLabs
-5. Tu cliques "Lancer" → les 5 personnes sont appelées
-6. Les réponses arrivent en temps réel dans ton dashboard
-
+### Notes techniques
+- Cache SWR : simple wrapper `getCached(key, fetcher, ttl)` renvoyant `{data, revalidate}`.
+- Arbre GitHub : appel initial `git/trees/{sha}` non récursif ; chargement lazy des sous-arbres au dépliage. Icônes réutilisent `iconResolver`.
+- Onglet terminal : ajout d'un discriminant `kind` dans le type `Tab`, rendu conditionnel dans le parent.
+- "Ouvrir à droite" émet un event `explorer:open-right` avec `folderId` intercepté par le conteneur qui bascule en split.
+- Sources cloud sans back : formulaires validés côté client, entrées persistées, navigation affiche un `EmptyState` "connexion mock — back-end à venir".
