@@ -45,7 +45,7 @@ function sortItems(items: TreeItem[]) {
   });
 }
 
-function TreeList({ items, depth, activePath, loadChildren, onOpenFile }: {
+function TreeList({ items, depth, activePath, loadChildren, onOpenFile, onContextMenu }: {
   items: TreeItem[]; depth: number; activePath?: string | null;
   loadChildren: (path: string) => Promise<TreeItem[]>;
   onOpenFile: (item: TreeItem) => void;
@@ -56,7 +56,6 @@ function TreeList({ items, depth, activePath, loadChildren, onOpenFile }: {
     <>
       {sorted.map((it) => (
         it.type === 'dir'
-          ? <TreeDir key={it.path} item={it} depth={depth} activePath={activePath} loadChildren={loadChildren} onOpenFile={onOpenFile} />
           ? <TreeDir key={it.path} item={it} depth={depth} activePath={activePath} loadChildren={loadChildren} onOpenFile={onOpenFile} onContextMenu={onContextMenu} />
           : <TreeFile key={it.path} item={it} depth={depth} activePath={activePath} onOpenFile={onOpenFile} onContextMenu={onContextMenu} />
       ))}
@@ -64,7 +63,7 @@ function TreeList({ items, depth, activePath, loadChildren, onOpenFile }: {
   );
 }
 
-function TreeDir({ item, depth, activePath, loadChildren, onOpenFile }: {
+function TreeDir({ item, depth, activePath, loadChildren, onOpenFile, onContextMenu }: {
   item: TreeItem; depth: number; activePath?: string | null;
   loadChildren: (path: string) => Promise<TreeItem[]>;
   onOpenFile: (item: TreeItem) => void;
@@ -114,7 +113,7 @@ function TreeDir({ item, depth, activePath, loadChildren, onOpenFile }: {
   );
 }
 
-function TreeFile({ item, depth, activePath, onOpenFile }: {
+function TreeFile({ item, depth, activePath, onOpenFile, onContextMenu }: {
   item: TreeItem; depth: number; activePath?: string | null;
   onOpenFile: (item: TreeItem) => void;
   onContextMenu?: (e: React.MouseEvent, item: TreeItem) => void;
