@@ -88,7 +88,14 @@ function driveIcon(source: ExplorerSource) {
 }
 
 function sourceIcon(source: ExplorerSource) {
-  if (source.type === 'ftp') return sidebarIcons.ftp;
+  const provider = source.provider || source.type;
+  if (provider === 'gdrive') return 'https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg';
+  if (provider === 'onedrive') return 'https://upload.wikimedia.org/wikipedia/commons/3/3c/Microsoft_Office_OneDrive_%282019%E2%80%93present%29.svg';
+  if (provider === 'dropbox') return 'https://upload.wikimedia.org/wikipedia/commons/7/78/Dropbox_Icon.svg';
+  if (provider === 'box') return 'https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/box.svg';
+  if (provider === 'icloud') return 'https://upload.wikimedia.org/wikipedia/commons/1/1c/ICloud_logo.svg';
+  if (provider === 'webdav') return 'https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/webdav.svg';
+  if (source.type === 'ftp' || provider === 'sftp' || provider === 'ftps') return sidebarIcons.ftp;
   if (source.type === 'cloud') return sidebarIcons.cloud;
   if (source.type === 'network') return sidebarIcons.network;
   return sidebarIcons.folder;
@@ -455,7 +462,7 @@ export function ExplorerSidebar({
   };
 
   return (
-    <div className="h-full flex flex-col bg-[hsl(var(--sidebar-background))] border-r border-[hsl(var(--sidebar-border))] overflow-y-auto w-full select-none">
+    <div className="h-full flex flex-col bg-[hsl(var(--sidebar-background))] border-r border-[hsl(var(--sidebar-border))] overflow-y-auto thin-scrollbar w-full select-none">
       <Section k="quick" label={t('sidebar.quickAccess')} collapsed={!!collapsed.quick} onToggle={toggleSection}>
         {!homeSource && <EmptyLine>{isAvailable ? 'Dossier utilisateur indisponible' : 'API locale indisponible'}</EmptyLine>}
         {homeSource && QUICK_ACCESS.map((item) => (
@@ -589,26 +596,30 @@ export function ExplorerSidebar({
       >
         <SidebarItem icon={sidebarIcons.network} label={t('sidebar.network')} active={isNetwork} onClick={() => onNavigateVirtual('network')} />
         {networkSources.length === 0 && <EmptyLine>Aucune source réseau configurée</EmptyLine>}
-        {networkSources.map((source) => (
-          <SidebarItem
-            key={source.id}
-            icon={sourceIcon(source)}
-            label={source.name}
-            active={activeSourceId === source.id}
-            onClick={() => onOpenSource?.(source.id, '/')}
-            indent={1}
-            right={<span className={netStatusDot(source.status)} />}
-            onContextMenu={(e) => openContextMenu(e, {
-              isBackground: false,
-              isNetwork: true,
-              networkKind: networkKind(source),
-              file: null,
-              hasClipboard: false,
-              selectedCount: 1,
-              targetId: source.id,
-            }, (actionId) => void handleSourceAction(actionId, source))}
-          />
-        ))}
+        {networkSources.length > 0 && (
+          <div className="max-h-[240px] overflow-y-auto thin-scrollbar">
+            {networkSources.map((source) => (
+              <SidebarItem
+                key={source.id}
+                icon={sourceIcon(source)}
+                label={source.name}
+                active={activeSourceId === source.id}
+                onClick={() => onOpenSource?.(source.id, '/')}
+                indent={1}
+                right={<span className={netStatusDot(source.status)} />}
+                onContextMenu={(e) => openContextMenu(e, {
+                  isBackground: false,
+                  isNetwork: true,
+                  networkKind: networkKind(source),
+                  file: null,
+                  hasClipboard: false,
+                  selectedCount: 1,
+                  targetId: source.id,
+                }, (actionId) => void handleSourceAction(actionId, source))}
+              />
+            ))}
+          </div>
+        )}
       </Section>
 
       <Section k="devices" label={t('sidebar.devices')} collapsed={!!collapsed.devices} onToggle={toggleSection}>
