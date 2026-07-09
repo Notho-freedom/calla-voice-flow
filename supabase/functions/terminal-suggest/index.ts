@@ -179,6 +179,13 @@ RÈGLES :
     }
 
     // ── SUGGEST MODE (défaut) ───────────────────────────────────
+    const suggestKey = (prompt && !lastOutput)
+      ? `tsg:suggest:${profile}:${hashKey(`${cwd}|${prompt}`)}`
+      : '';
+    if (suggestKey && redisEnabled()) {
+      const hit = await cacheGet<{ suggestions: string[] }>(suggestKey);
+      if (hit) return jsonResponse({ ...hit, cached: true });
+    }
     const system = `Tu es un assistant terminal expert (${profile}). Propose des commandes sûres, concises, prêtes à exécuter. Si l'utilisateur donne un objectif, transforme-le en 1 à 5 commandes candidates. Sinon, déduis la prochaine commande utile depuis la dernière sortie. Réponds STRICTEMENT en JSON : {"suggestions":["cmd1","cmd2"]}. Pas d'explication.`;
 
     const user = `cwd: ${cwd}
@@ -199,10 +206,8 @@ Propose la ou les commandes suivantes utiles.`;
       }
     } catch { /* ignore */ }
 
-    // Cache suggestions when input is stable (no dynamic lastOutput noise).
-    if (suggestions.length && !lastOutput && prompt) {
-      const key = `tsg:suggest:${profile}:${hashKey(`${cwd}|${prompt}`)}`;
-      await cacheSet(key, { suggestions }, 60 * 10); // 10 min
+    if (suggestKey && suggestions.length) {
+      await cacheSet(suggestKey, { suggestions }, 60 * 10); // 10 min
     }
     return jsonResponse({ suggestions });
   } catch (err) {
