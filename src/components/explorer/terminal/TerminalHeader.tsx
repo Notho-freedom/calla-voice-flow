@@ -1,6 +1,9 @@
-import { TerminalSquare, X, Minus, Maximize2, SplitSquareHorizontal, SplitSquareVertical, Plus, Sparkles, Volume2, VolumeX, Eraser, Search, Settings2, MoreVertical, Copy as CopyIcon } from 'lucide-react';
+import { TerminalSquare, X, Minus, Maximize2, SplitSquareHorizontal, SplitSquareVertical, Plus, Sparkles, Volume2, VolumeX, Eraser, Search, Settings2, MoreVertical, Copy as CopyIcon, Keyboard, MessageSquare, Sliders } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ModelPicker } from './ModelPicker';
+import { AiSettingsDialog } from './AiSettingsDialog';
 import { useState } from 'react';
+import { isKeySoundEnabled, setKeySoundEnabled } from '@/lib/sounds';
 
 export type ShellProfile = 'powershell' | 'bash' | 'cmd' | 'node' | 'python';
 
@@ -30,12 +33,17 @@ interface Props {
   onClose: () => void;
   onOpenInTab?: () => void;
   running: boolean;
+  chatOpen?: boolean;
+  onToggleChat?: () => void;
 }
 
 export function TerminalHeader(props: Props) {
   const [profOpen, setProfOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const [keySound, setKeySoundState] = useState(isKeySoundEnabled());
   const profile = PROFILES.find((p) => p.id === props.profile) || PROFILES[0];
+  const toggleKeySound = () => { const n = !keySound; setKeySoundState(n); setKeySoundEnabled(n); };
 
   const iconBtn = 'h-5 w-5 flex items-center justify-center rounded hover:bg-[hsl(var(--explorer-hover))] transition-colors';
 
@@ -81,7 +89,21 @@ export function TerminalHeader(props: Props) {
 
       <div className="flex-1" />
 
+      <ModelPicker onOpenSettings={() => setAiSettingsOpen(true)} />
+      <button onClick={() => setAiSettingsOpen(true)} className={iconBtn} title="Paramètres IA · fournisseurs, clés, auto-switch">
+        <Sliders size={11} />
+      </button>
+
       {/* Toolbar buttons */}
+      {props.onToggleChat && (
+        <button
+          onClick={props.onToggleChat}
+          className={cn(iconBtn, props.chatOpen && 'bg-indigo-500/20 text-indigo-300')}
+          title={props.chatOpen ? 'Fermer le chat IA' : 'Ouvrir le chat IA'}
+        >
+          <MessageSquare size={11} />
+        </button>
+      )}
       <button onClick={props.onFind} className={iconBtn} title="Rechercher (Ctrl+F)">
         <Search size={11} />
       </button>
@@ -98,9 +120,16 @@ export function TerminalHeader(props: Props) {
       <button
         onClick={props.onToggleSound}
         className={cn(iconBtn, !props.soundEnabled && 'text-muted-foreground/50')}
-        title={props.soundEnabled ? 'Couper les sons' : 'Activer les sons'}
+        title={props.soundEnabled ? 'Couper les sons UI' : 'Activer les sons UI'}
       >
         {props.soundEnabled ? <Volume2 size={11} /> : <VolumeX size={11} />}
+      </button>
+      <button
+        onClick={toggleKeySound}
+        className={cn(iconBtn, keySound ? 'bg-primary/20 text-primary' : 'text-muted-foreground/50')}
+        title={keySound ? 'Sons de frappe : activés' : 'Sons de frappe : coupés'}
+      >
+        <Keyboard size={11} />
       </button>
 
       <div className="w-px h-4 bg-border/40 mx-0.5" />
@@ -141,6 +170,7 @@ export function TerminalHeader(props: Props) {
       <button onClick={props.onClose} className={cn(iconBtn, 'hover:bg-red-500/20 hover:text-red-400')} title="Fermer">
         <X size={11} />
       </button>
+      <AiSettingsDialog open={aiSettingsOpen} onClose={() => setAiSettingsOpen(false)} />
     </div>
   );
 }
