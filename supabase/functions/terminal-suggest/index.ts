@@ -1,6 +1,7 @@
 // Terminal AI backend — modes: suggest, agent, explain, chat.
 
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
+import { cacheGet, cacheSet, hashKey, redisEnabled } from '../_shared/upstash.ts';
 
 const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 
@@ -137,11 +138,18 @@ Décide de la prochaine action.`;
 
     // ── EXPLAIN MODE ────────────────────────────────────────────
     if (mode === 'explain') {
+      const cacheKey = `tsg:explain:${profile}:${hashKey(prompt)}`;
+      if (redisEnabled()) {
+        const hit = await cacheGet<{ explanation: string }>(cacheKey);
+        if (hit) return jsonResponse({ ...hit, cached: true });
+      }
       const system = `Tu es un expert shell (${profile}). Explique une commande en 3-6 lignes claires en français. Structure : rôle, options clés, effet, risques éventuels. Réponds JSON : {"explanation":"..."}`;
       const raw = await callAI(system, `Commande : ${prompt}`);
       let parsed: { explanation?: string } = {};
       try { parsed = JSON.parse(raw); } catch { /* ignore */ }
-      return jsonResponse({ explanation: parsed.explanation || '' });
+      const out = { explanation: parsed.explanation || '' };
+      if (out.explanation) await cacheSet(cacheKey, out, 60 * 60 * 24); // 24h
+      return jsonResponse(out);
     }
 
     // ── CHAT MODE (conversationnel, non-agent) ──────────────────
@@ -171,6 +179,13 @@ RÈGLES :
     }
 
     // ── SUGGEST MODE (défaut) ───────────────────────────────────
+    const suggestKey = (prompt && !lastOutput)
+      ? `tsg:suggest:${profile}:${hashKey(`${cwd}|${prompt}`)}`
+      : '';
+    if (suggestKey && redisEnabled()) {
+      const hit = await cacheGet<{ suggestions: string[] }>(suggestKey);
+      if (hit) return jsonResponse({ ...hit, cached: true });
+    }
     const system = `Tu es un assistant terminal expert (${profile}). Propose des commandes sûres, concises, prêtes à exécuter. Si l'utilisateur donne un objectif, transforme-le en 1 à 5 commandes candidates. Sinon, déduis la prochaine commande utile depuis la dernière sortie. Réponds STRICTEMENT en JSON : {"suggestions":["cmd1","cmd2"]}. Pas d'explication.`;
 
     const user = `cwd: ${cwd}
@@ -191,6 +206,9 @@ Propose la ou les commandes suivantes utiles.`;
       }
     } catch { /* ignore */ }
 
+    if (suggestKey && suggestions.length) {
+      await cacheSet(suggestKey, { suggestions }, 60 * 10); // 10 min
+    }
     return jsonResponse({ suggestions });
   } catch (err) {
     return jsonResponse({ error: (err as Error).message, suggestions: [] }, 200);
